@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Pin Hockey – Zubair Games</title>
+<style>
+  body { margin:0; background:#0b0f14; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; }
+  canvas { background:#101823; border:2px solid #0e141d; border-radius:12px; width:100%; height:100%; max-width:1000px; max-height:600px; touch-action:none; }
+  .joystick {
+    position: fixed;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    border: 2px solid #333;
+    background: rgba(255,255,255,0.05);
+    touch-action: none;
+    bottom: 20px; left: 20px;
+  }
+  .knob {
+    position:absolute; left:50%; top:50%;
+    width: 60px; height: 60px;
+    margin-left:-30px; margin-top:-30px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="1280" height="720"></canvas>
+
+<!-- Touch joystick for Blue -->
+<div class="joystick" id="joy1"><div class="knob"></div></div>
+
+<script>
+/* ------------------------------
+   Joystick handler
+------------------------------ */
+function createJoystick(el) {
+  let joy = { x:0, y:0, active:false };
+  const knob = el.querySelector('.knob');
+  el.addEventListener('touchstart', e => { joy.active = true; });
+  el.addEventListener('touchmove', e => {
+    const rect = el.getBoundingClientRect();
+    const touch = e.touches[0];
+    const dx = touch.clientX - (rect.left + rect.width/2);
+    const dy = touch.clientY - (rect.top + rect.height/2);
+    const dist = Math.min(1, Math.hypot(dx,dy)/(rect.width/2));
+    const angle = Math.atan2(dy, dx);
+    joy.x = Math.cos(angle) * dist;
+    joy.y = Math.sin(angle) * dist;
+    knob.style.transform = `translate(${joy.x*40}px,${joy.y*40}px)`;
+  });
+  el.addEventListener('touchend', e => {
+    joy.x=joy.y=0; joy.active=false;
+    knob.style.transform = 'translate(0,0)';
+  });
+  return joy;
+}
+const joy1 = createJoystick(document.getElementById('joy1'));
+
+/* ------------------------------
+   Game logic
+------------------------------ */
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W=canvas.width,H=canvas.height;
+
+const p1={x:W*0.25,y:H/2,r:35,color:'blue',speed:400};
+const p2={x:W*0.75,y:H/2,r:35,color:'red',speed:350}; // CPU
+const puck={x:W/2,y:H/2,r:20,vx:220,vy:140};
+
+let score1=0,score2=0,gameOver=false;
+let showSplash=true;
+
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+
+function resetPuck(){
+  puck.x=W/2; puck.y=H/2;
+  puck.vx=(Math.random()>0.5?220:-220);
+  puck.vy=(Math.random()*200-100);
+}
+
+function checkFouls(){
+  if(p1.x > W/2 - p1.r){
+    score2++; resetRound("Foul! Blue crossed midline");
+  }
+  if(p2.x < W/2 + p2.r){
+    score1++; resetRound("Foul! Red crossed midline");
+  }
+}
+
+function resetRound(msg){
+  if(msg) alert(msg);
+  p1.x=W*0.25; p1.y=H/2;
+  p2.x=W*0.75; p2.y=H/2;
+  resetPuck();
+}
+
+function loop(dt){
+  if(showSplash || gameOver) { draw(); return; }
+
+  // Player movement
+  p1.x+=joy1.x*p1.speed*dt; p1.y+=joy1.y*p1.speed*dt;
+  p1.x=clamp(p1.x,p1.r,W/2-p1.r); p1.y=clamp(p1.y,p1.r,H-p1.r);
+
+  // CPU AI
+  let targetY = puck.y;
+  let targetX = clamp(puck.x, W/2+40, W-p2.r-10);
+  p2.x += (targetX - p2.x) * 0.04;
+  p2.y += (targetY - p2.y) * 0.04;
+
+  // puck move
+  puck.x+=puck.vx*dt; puck.y+=puck.vy*dt;
+  if(puck.y<puck.r||puck.y>H-puck.r)puck.vy*=-1;
+
+  // goal check
+  if(puck.x < 0){ score2++; resetRound("Goal for Red!"); }
+  if(puck.x > W){ score1++; resetRound("Goal for Blue!"); }
+
+  checkFouls();
+
+  // collisions
+  collide(p1); collide(p2);
+
+  // win condition
+  if(score1>=7 || score2>=7){
+    gameOver=true;
+    setTimeout(()=>alert((score1>=7?"Blue":"Red")+" wins the game!"),100);
+  }
+
+  draw();
+}
+function collide(p){
+  let dx=puck.x-p.x,dy=puck.y-p.y,dist=Math.hypot(dx,dy);
+  if(dist<p.r+puck.r){
+    let angle=Math.atan2(dy,dx);
+    let overlap=p.r+puck.r-dist;
+    puck.x+=Math.cos(angle)*overlap;
+    puck.y+=Math.sin(angle)*overlap;
+    puck.vx=Math.cos(angle)*300;
+    puck.vy=Math.sin(angle)*300;
+  }
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0e1722'; ctx.fillRect(0,0,W,H);
+
+  if(showSplash){
+    ctx.fillStyle="white"; ctx.font="bold 64px Arial"; ctx.textAlign="center";
+    ctx.fillText("Zubair Games", W/2, H/2);
+    return;
+  }
+
+  // Mid line
+  ctx.strokeStyle='green'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.stroke();
+
+  drawCircle(p1); drawCircle(p2);
+
+  // puck
+  ctx.fillStyle='red';
+  ctx.beginPath(); ctx.arc(puck.x,puck.y,puck.r,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='white'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.arc(puck.x,puck.y,puck.r-6,0,Math.PI*2); ctx.stroke();
+
+  // scores
+  ctx.fillStyle="white"; ctx.font="32px Arial"; ctx.textAlign="center";
+  ctx.fillText(score1, W*0.25, 50);
+  ctx.fillText(score2, W*0.75, 50);
+}
+function drawCircle(p){
+  ctx.fillStyle=p.color;
+  ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+}
+
+let last=performance.now();
+function frame(t){let dt=(t-last)/1000; last=t; loop(dt); requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+
+// Hide splash after 3 seconds
+setTimeout(()=>{ showSplash=false; }, 3000);
